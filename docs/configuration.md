@@ -259,6 +259,8 @@ Block specific commands from being executed, even within command chains.
 | `deny` | List of command prefixes to block (e.g., `["git push", "rm -rf"]`) |
 | `allow` | List of command prefixes to allow, overriding `deny` |
 | `useDefaults` | Enable default deny list of dangerous system commands (default: `true`) |
+| `allowBlockingCritical` | Force runtime exec deny even when the target binary is shared with critical shell commands (see below) |
+| `silenceSharedBinaryWarning` | List of command names whose shared-binary skip warning should be suppressed (see below) |
 
 Example:
 
@@ -296,6 +298,25 @@ Fence also enforces runtime executable deny for child processes:
 
 - Single-token deny entries (for example, `python3`, `node`, `ruby`) are resolved to executable paths and blocked at exec-time.
 - This applies even when the executable is launched by an allowed parent process (for example, `claude`, `codex`, `opencode`, or `env`).
+
+### Shared and Multicall Binaries
+
+Some systems use multicall binaries: a single executable file that implements many commands via hardlinks or symlinks. Examples include busybox (`ls`, `cat`, `head`, `tail`, and hundreds more sharing one binary) and some coreutils builds.
+
+When fence tries to block a single-token rule at runtime, it resolves the path and denies it. If the target binary also implements critical shell commands (`ls`, `cat`, `head`, `tail`, `env`, `echo`, and similar), masking it would break the shell environment entirely. Fence detects this automatically using inode/device identity and skips the block with a warning:
+
+```
+runtime exec deny skipped for /usr/bin/busybox (requested: dd): shared binary also implements
+critical commands [cat head tail ls ...]. To force blocking add "allowBlockingCritical": true to
+your command config. To silence this warning add "dd" to "silenceSharedBinaryWarning".
+```
+
+The two escape hatches:
+
+- `allowBlockingCritical: true` — force the block anyway. Use this for maximum security. You accept that many shell commands the agent generates that would be fine with your blocklist are also going to fail.
+- `silenceSharedBinaryWarning: ["dd"]` — accept that the command cannot be blocked in this environment and suppress the warning.
+
+Blocking a shared binary is **not** skipped when the collateral names are themselves plausible block targets (e.g., blocking both `python` and `python3` when they share a binary is fine — they are all variants of the same thing).
 
 Current runtime-exec limitations:
 
